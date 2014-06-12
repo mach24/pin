@@ -9,7 +9,10 @@ $def with (categories)
   $for cat in categories:
     $if i % 5 == 0:
       </tr><tr>
-    <td style='width: 250px'><b><a href="/category/$cat['slug']">$cat['name']</a></b></td>
+    <td style='width: 250px'>
+    <b><a href="/category/$cat['slug']">$cat['name']</a></b><br>
+    $# <a class='button' href="/unfollow_user/$cat['id']">Unfollow</a>
+    </td>
     $ i += 1
   </tr>
 </table>

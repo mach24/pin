@@ -91,6 +91,15 @@ urls = (
     '/convo/(\d*)', 'PageConvo',
     '/follow/(\d*)', 'PageFollow',
     '/addfriend/(\d*)', 'PageAddFriend',
+
+    # Followings
+    '/follow_user/(\d*)', 'PageFollowUser',
+    '/unfollow_user/(\d*)', 'PageUnfollowUser',
+    '/follow_category/(\d*)', 'PageFollowCategory',
+    '/unfollow_category/(\d*)', 'PageUnfollowCategory',
+    '/follow_getlist/(\d*)', 'PageFollowList',
+    '/unfollow_getlist/(\d*)', 'PageUnfollowList',
+
     '/preview', 'PagePreview',
     '/like/(\d*)', 'PageLike',
     '/unlike/(\d*)', 'PageUnlike',
@@ -247,40 +256,12 @@ class PageIndex:
     )
 
     def GET(self, first_time=None):
-        # query1 = '''
-        #     select
-        #         pins.*, tags.tags, categories.slug as category, categories.name as cat_name, users.pic as user_pic, users.username as user_username, users.name as user_name,
-        #         count(distinct p1) as repin_count,
-        #         count(distinct l1) as like_count
-        #     from pins
-        #         left join tags on tags.pin_id = pins.id
-        #         left join pins p1 on p1.repin = pins.id
-        #         left join likes l1 on l1.pin_id = pins.id
-        #         left join users on users.id = pins.user_id
-        #         left join follows on follows.follow = users.id
-        #         left join categories on categories.id in
-        #             (select category_id from pins_categories where pin_id = pins.id limit 1)
-        #     where users.id = $id
-        #     group by tags.tags, categories.id, pins.id, users.id offset %d limit %d'''
-
-        # query2 = '''
-        #     select
-        #         tags.tags, pins.*, categories.slug as category, categories.name as cat_name, users.pic as user_pic, users.username as user_username, users.name as user_name,
-        #         count(distinct p1.id) as repin_count,
-        #         count(distinct l1) as like_count
-        #     from pins
-        #         left join tags on tags.pin_id = pins.id
-        #         left join users on users.id = pins.user_id
-        #         left join pins p1 on p1.repin = pins.id
-        #         left join likes l1 on l1.pin_id = pins.id
-        #         left join categories on categories.id in
-        #             (select category_id from pins_categories where pin_id = pins.id limit 1)
-        #     where not users.private
-        #     group by tags.tags, categories.id, pins.id, users.id order by timestamp desc offset %d limit %d'''
-
         offset = int(web.input(offset=1).offset)
         ajax = int(web.input(ajax=0).ajax)
         pins = []
+        feed_users = None
+        feed_cats = None
+        feed_getlists = None
 
         if logged_in(sess):
             data_to_send = {
@@ -324,18 +305,33 @@ class PageIndex:
             request_data['csid_from_client'] = ''
             request_data['use_redis'] = False
 
-            # Retrieve user feeds
-            data_from_feeds = api_request("/api/profile/feed/get", data=request_data)
-            pins = None
+            data_from_feeds = api_request("api/profile/feed/get", "POST", request_data)
+
+            feeds = None
             if data_from_feeds['status'] == 200:
-                pins = data_from_feeds['data']['feeds']
-                pins = [pin_utils.dotdict(pin) for pin in pins]
+                feeds = data_from_feeds['data']['feeds']
+                feeds = [pin_utils.dotdict(feed) for feed in feeds]
+
+
+            # Retrieve user feeds
+            logintoken = convert_to_logintoken(sess.user_id)
+            # Get all users who are following the user
+            feed_data = {
+                "csid_from_client": "",
+                "logintoken": logintoken,
+            }
+            feed_users = api_request('/api/profile/feed/get', data=feed_data)
+            feed_cats = api_request('/api/profile/feed/categories', data=feed_data)
+            feed_getlists = api_request('/api/profile/feed/getlists', data=feed_data)
+            feed_users = [pin_utils.dotdict(feed_user) for feed_user in feed_users['data']['feeds']]
+            feed_cats = [pin_utils.dotdict(feed_cat) for feed_cat in feed_cats['data']['feeds']]
+            feed_getlists = [pin_utils.dotdict(feed_getlist) for feed_getlist in feed_getlists['data']['feeds']]
 
         if ajax:
             return json_pins(pins)
 
         form = self._form()
-        return ltpl('index', pins, first_time, form)
+        return ltpl('index', pins, first_time, form, feed_users, feed_cats, feed_getlists)
 
 class PageLogin:
     _form = form.Form(
@@ -748,7 +744,91 @@ class PageConnect:
             "logintoken": logintoken}
         follows = api_request(follow_url, data=followers_context).get("data")
         follows = [pin_utils.dotdict(follow) for follow in follows]
-        return ltpl('connect', follows, followers)
+
+        # New API calls for follows and followers
+        user_follow_url = "/api/profile/feed/follow"
+
+        # Get all users who are following the user
+        user_followed_data = {
+            "csid_from_client": "",
+            "logintoken": logintoken,
+            "follow_type": 'followed',
+            "feed_type": 'user'
+        }
+        user_followed = api_request(user_follow_url, data=user_followed_data)
+        user_followed = user_followed['data']['following']
+        followed_by = list()
+        if user_followed is not None:
+            for followed in user_followed:
+                followed_by.append(pin_utils.dotdict(dbget('users', followed)))
+
+
+        # Get all users who are following the user
+        user_follows_data = {
+            "csid_from_client": "",
+            "logintoken": logintoken,
+            "follow_type": 'follower',
+            "feed_type": 'user'
+        }
+        user_follows = api_request(user_follow_url, data=user_follows_data)
+        user_follows = user_follows['data']['following']
+        follows = list()
+        if user_follows is not None:
+            for follow in user_follows:
+                follows.append(pin_utils.dotdict(dbget('users', follow)))
+
+
+
+        # Get all categories which the user is following
+        cat_follows_data = {
+            "csid_from_client": "",
+            "logintoken": logintoken,
+            "follow_type": 'follower',
+            "feed_type": 'category'
+        }
+        cat_followed = api_request(user_follow_url, data=cat_follows_data)
+        cat_followed = cat_followed['data']['following']
+        first_cat_id = cat_followed[0]
+        follow_cat = list()
+        if cat_followed is not None:
+            for cat in cat_followed:
+                category = dbget('categories', cat)
+                first_cat_pin = db.select('pins_categories', where="category_id=$cat_id", vars={'cat_id': cat})
+                # first_cat_pin = list(first_cat_pin)
+                first_cat_id = first_cat_pin[0]
+                first_cat_pin = db.select('pins', where="id=$pin_id", vars={'pin_id': first_cat_id.pin_id})
+                # first_cat_pin = list(first_cat_pin)
+                first_cat_pin = first_cat_pin[0]
+                total_data = {'pin': first_cat_pin, 'category': pin_utils.dotdict(category)}
+                follow_cat.append(total_data)
+
+        # Get all getlist which the user is following
+        list_follows_data = {
+            "csid_from_client": "",
+            "logintoken": logintoken,
+            "follow_type": 'follower',
+            "feed_type": 'getlist'
+        }
+        list_followed = api_request(user_follow_url, data=list_follows_data)
+        list_followed = list_followed['data']['following']
+        first_list_id = cat_followed[0]
+        first_list_pin = db.select('pins', where="board_id=$board_id", vars={'board_id': first_list_id})
+        # first_list_pin = list(first_cat_pin)
+        first_list_pin = first_list_pin[0]
+        list_of_user = dbget('users', int(first_list_pin.user_id))
+
+        follow_list = list()
+        if list_followed is not None:
+            for getlist in list_followed:
+                follow_data = db.select('boards', where="id=$b_id", vars={'b_id': getlist})
+                for f in follow_data:
+                    follow_user = dbget('users', f.user_id)
+                    follow_pic = db.select('pins',where="board_id=$board", vars={'board': f.id}) 
+                    follow_pic = follow_pic[0]
+                    total_data = {'user': follow_user, 'pin': follow_pic, 'board': pin_utils.dotdict(f)}
+                    follow_list.append(total_data)
+                    
+        return ltpl('connect', follows, followed_by, follow_cat, follow_list)
 
 
 class PagePin:
@@ -1058,12 +1138,19 @@ class PageProfile2:
         boards_list = [pin_utils.dotdict(board) for board in boards]
         # Takes only boards with pins
         boards = [board for board in boards_list if len(board.get("pins_ids")) > 0]
-
+        for board in boards:
+            if is_followed(sess.user_id, board.id, 'getlist'):
+                board['is_followed'] = True
+            else:
+                board['is_followed'] = False
 
         # Getting categories. Required in case when user
         # is editing own pins.
         categories_to_select = cached_models\
             .get_categories_with_children(db)
+
+        # Following check
+        following_user = False
 
         # Updates views & notify profile owner
         is_logged_in = logged_in(sess)
@@ -1088,6 +1175,11 @@ class PageProfile2:
                     "msg": msg,
                     "url": '/%s' % this_user.get("username", "")}
                 api_request("/notifications/add", data=notif_context)
+
+            # Check if visiting user is following the user
+            # following_user = db.select('newsfeed', where="follower = $follower_id AND feed_type='user'", vars={'follower_id': sess.user_id})
+            # following_user = True if len(following_user) >= 1 else False
+            following_user = is_followed(sess.user_id, user.id, 'user')
 
         # Offset for rendering
         offset = int(web.input(offset=1).offset)
@@ -1118,21 +1210,21 @@ class PageProfile2:
 
         pins = [pin_utils.dotdict(pin) for pin in pins]
 
-        data_for_feeds = {
-            'csid_from_client': '',
-            'logintoken': logintoken,
-            'user_id': user.id,
-            'limit': 0,
-            'offset': 0,
-            'use_redis': False
-        }
-
-        data_from_feeds = api_request("api/profile/feed/get", "POST", data_for_feeds)
-        feeds = None
-        if data_from_feeds['status'] == 200:
-            feeds = data_from_feeds['data']['feeds']
-            feeds = [pin_utils.dotdict(feed) for feed in feeds]
-
+#         data_for_feeds = {
+#             'csid_from_client': '',
+#             'logintoken': logintoken,
+#             'user_id': user.id,
+#             'limit': 0,
+#             'offset': 0,
+#             'use_redis': False
+#         }
+# 
+#         data_from_feeds = api_request("api/profile/feed/get", "POST", data_for_feeds)
+#         feeds = None
+#         if data_from_feeds['status'] == 200:
+#             feeds = data_from_feeds['data']['feeds']
+#             feeds = [pin_utils.dotdict(feed) for feed in feeds]
+# 
 
         # Handle ajax request to pins
         ajax = int(web.input(ajax=0).ajax)
@@ -1142,18 +1234,21 @@ class PageProfile2:
         # Building hash to use with images
         hashed = rs()
 
+        # Check if user views own profile or if its a different user
+        self_view = False
+
         # Getting link to edit profile...
         if show_private:
+            self_view = True
             get_input = web.input(_method='get')
             edit_profile = edit_profile_done = None
             if 'editprofile' in get_input:
                 edit_profile = True
                 if get_input['editprofile']:
                     edit_profile_done = True
-            return ltpl('profile', user, pins, offset, PIN_COUNT, hashed,
-                        edit_profile, edit_profile_done, boards,
-                        categories_to_select, boards_first_pins, total, total_owned, feeds)
-        return ltpl('profile', user, pins, offset, PIN_COUNT, hashed,feeds)
+            return ltpl('profile', user, pins, offset, PIN_COUNT, hashed, following_user, self_view, boards,
+                        categories_to_select, boards_first_pins, total, total_owned, edit_profile, edit_profile_done)
+        return ltpl('profile', user, pins, offset, PIN_COUNT, hashed, following_user, self_view, boards, categories_to_select, boards_first_pins, total, total_owned)
 
 
 class PageFollow:
@@ -1170,6 +1265,104 @@ class PageFollow:
             make_notif(user_id, '<b>%s</b> is now following you!' % user.username, '/%s' % user.username)
         except: pass
         raise web.seeother('/profile/%d' % user_id)
+
+
+class PageFollowUser:
+    def GET(self, user_id):
+        force_login(sess)
+        user_id = int(user_id)
+        feed_type = u"user"
+
+        user = dbget('users', sess.user_id)
+        if not user:
+            return 'Your user doesn\'t exists.'
+
+        try:
+            db.insert('newsfeed', follower=sess.user_id, follow=user_id, feed_type=feed_type)
+            make_notif(user_id, '<b>%s</b> is now following you!' % user.username, '/%s' % user.username)
+        except:
+            pass
+        raise web.seeother('/profile/%d' % user_id)
+
+class PageFollowCategory:
+    def GET(self, cat_id):
+        force_login(sess)
+        cat_id = int(cat_id)
+        feed_type = u"category"
+
+        cat = dbget('categories', cat_id)
+        if not cat:
+            return 'Your category doesn\'t exists.'
+
+        try:
+            db.insert('newsfeed', follower=sess.user_id, follow=cat_id, feed_type=feed_type)
+            make_notif(sess.user_id, 'You are following <b>%s</b> category now!' % user.username)
+        except:
+            pass
+        cat = dbget('categories', cat_id)
+        raise web.seeother('/category/%s' % cat.slug)
+
+
+class PageFollowList:
+    def GET(self, list_id):
+        force_login(sess)
+        list_id = int(list_id)
+        feed_type = u"getlist"
+
+        getlist = dbget('boards', list_id)
+        if not getlist:
+            return 'Your getlist doesn\'t exists.'
+        getlist_user = dbget('users', getlist.user_id)
+        if not getlist_user:
+            return 'There is no such user with that getlist'
+
+        try:
+            db.insert('newsfeed', follower=sess.user_id, follow=list_id, feed_type=feed_type)
+            make_notif(sess.user_id, 'You are following %s\'s' % getlist_user.name, ' <b>%s</b> getlist now!' % getlist.name)
+        except Exception, e:
+            print e
+        raise web.seeother('/profile/%d' % int(getlist.user_id))
+
+
+class PageUnfollowUser:
+    def GET(self, user_id):
+        force_login(sess)
+        user_id = int(user_id)
+        f_type = u"user"
+        
+        db.delete('newsfeed', where='follower = $follower and follow = $follow  and follow = $follow and feed_type = $f_type',
+                vars={'follower': sess.user_id, 'follow': user_id, 'f_type': f_type})
+
+        raise web.seeother('/profile/%s' % user_id)
+
+
+class PageUnfollowCategory:
+    def GET(self, cat_id):
+        force_login(sess)
+        cat_id = int(cat_id)
+        f_type = u"category"
+
+        db.delete('newsfeed', where='follower = $follower and follow = $follow and feed_type = $f_type',
+                vars={'follower': sess.user_id, 'follow': cat_id, 'f_type': f_type})
+        
+        cat = dbget('categories', cat_id)
+        raise web.seeother('/category/%s' % cat.slug)
+
+
+class PageUnfollowList:
+    def GET(self, list_id):
+        force_login(sess)
+        list_id = int(list_id)
+        f_type = u"getlist"
+
+        getlist = dbget('boards', list_id)
+        if not getlist:
+            return 'Your getlist doesn\'t exists.'
+
+        db.delete('newsfeed', where='follower = $follower and follow = $follow and feed_type = $f_type',
+                vars={'follower': sess.user_id, 'follow': list_id, 'f_type': f_type})
+
+        raise web.seeother('/profile/%s' % getlist.user_id)
 
 
 class PageAddFriend:
@@ -2218,6 +2411,11 @@ class PageCategory:
             if not category:
                 return 'Category not found.'
 
+        # Check if user follows the category
+        if logged_in(sess):
+            # following_cat = db.select('newsfeed' 
+            follow_cat = is_followed(sess.user_id, cid, 'category') 
+
         offset = int(web.input(offset=0).offset)
         ajax = int(web.input(ajax=0).ajax)
 
@@ -2263,7 +2461,7 @@ class PageCategory:
         boards = [pin_utils.dotdict(board) for board in boards]
         if ajax:
             return json_pins(pins, 'horzpin')
-        return ltpl('category', pins, category, all_categories, subcategories, boards)
+        return ltpl('category', pins, category, all_categories, subcategories, boards, follow_cat)
 
 
 def make_query(q):
@@ -2357,6 +2555,12 @@ def csrf_protected(f):
 <a href="">Back to the form</a>.""")
         return f(*args, **kwargs)
     return decorated
+
+def is_followed(follower, follow, f_type):
+    following = db.select('newsfeed', where="follower = $follower_id AND follow = $follow_id AND feed_type= $f_type", vars={'follower_id': follower, 'follow_id': follow, 'f_type': f_type})
+    following = True if len(following) >= 1 else False
+    return following
+
 
 if __name__ == '__main__':
 

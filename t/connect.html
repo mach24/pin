@@ -1,6 +1,14 @@
-$def with (follows, followers)
+$def with (follows, followers, cat_followed=None, list_followed=None)
 
-<h1>Following</h1>
+<h1>People who are following you:</h1>
+$if not followers:
+  <p>No one is following you.</p>
+$else:
+  $:tpl('usergrid', followers)
+
+<hr>
+
+<h1>People who you are following:</h1>
 $if not follows:
   <p>You aren't following anyone.</p>
 $else:
@@ -8,8 +16,43 @@ $else:
 
 <hr>
 
-<h1>Followers</h1>
-$if not followers:
-  <p>No one is following you.</p>
+<h1>Categories which you are following:</h1>
+$if not cat_followed:
+    <p>You aren't following any category, please browse categories</p>
 $else:
-  $:tpl('usergrid', followers)
+    <div class='user-grid clearfix'>
+    $for cat in cat_followed:
+        <div class='cat left clearfix'>
+        $if cat['pin'] is not None:
+            $if cat['pin'].image_202_url:
+                <img class='left' style="margin-left: 5px; margin-right: 8px;" width="78" src="$(cat['pin'].image_202_url)" alt=''/>
+        $else:
+            <img class='left' style="margin-left: 5px; margin-right: 8px;" width="78" src='http://wiki.mikrotik.com/images/9/99/Category.png' alt=''/>
+        <div class='left bold'>
+        <p><a href="/category/$cat['category'].slug">$cat['category'].name</a></p>
+        </div>
+        </div>
+    </div>
+
+<hr>
+
+<h1>Getlists which you are following:</h1>
+$if not list_followed:
+    <p>You aren't following any getlist</p>
+$else:
+    <div class='user-grid clearfix'>
+    $for getlist in list_followed:
+        <div class='getlist left clearfix'>
+        $if getlist['pin'].image_202_url is not None:
+            $if getlist['pin'].image_202_url:
+                <img class='left' style="margin-left: 5px; margin-right: 8px;" width="78" src="$getlist['pin'].image_202_url)" alt=''/>
+        $else:
+            <img class='left' style="margin-left: 5px; margin-right: 8px;" width="78" src='http://wiki.mikrotik.com/images/9/99/getlistegory.png' alt=''/>
+        <div class='left bold'>
+        <p><a href="/$getlist['user'].name">$getlist['board'].name</a></p>
+        <small>User: $getlist['user'].name</small>
+        </div>
+        </div>
+    </div>
+
+

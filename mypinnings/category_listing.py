@@ -11,10 +11,10 @@ from mypinnings.conf import settings
 from mypinnings import auth
 from mypinnings.api import api_request, convert_to_id, convert_to_logintoken
 from mypinnings import pin_utils
+from mypinnings.auth import logged_in
 
 
 logger = logging.getLogger('mypinnings.categories')
-
 
 class PageCategory:
     def GET(self, slug=None):
@@ -108,13 +108,24 @@ class PageCategory:
                              data=data).get("data", [])
         boards = [pin_utils.dotdict(board) for board in boards]
 
+        # Check if user follows the category
+        sess_user_id = self.sess.user_id
+        follow_cat = None
+        if logged_in(self.sess):
+            cat_id = self.category['id']
+            follow_cat = self.is_followed(sess_user_id, cat_id, 'category') 
+        print '#######################################################'
+        print follow_cat
+
+
         return template.ltpl('category',
                              self.category,
                              cached_models.get_categories(),
                              subcategories,
                              boards,
                              siblings_categories,
-                             parent)
+                             parent,
+                             follow_cat)
 
     def get_items(self):
         sess = session.get_session()
@@ -183,3 +194,10 @@ class PageCategory:
         self.sess['offset'] = offset
         json_pins = json.dumps(pin_list)
         return json_pins
+
+    def is_followed(self, follower, follow, f_type):
+        following = self.db.select('newsfeed', where="follower = $follower_id AND follow = $follow_id AND feed_type= $f_type", vars={'follower_id': follower, 'follow_id': follow, 'f_type': f_type})
+        following = True if len(following) >= 1 else False
+        return following
+
+

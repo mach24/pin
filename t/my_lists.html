@@ -1,13 +1,18 @@
-$def with (boards, user, boards_first_pins={})
+$def with (boards, user, boards_first_pins={}, self_view=None)
 <div class="tab-pane fade" id="list-box-wrapper">
-    <div class="greyLine">
+    $if self_view is not None and self_view:
+        <div class="greyLine">
         <a href='/new-list' class="button"><b>Add A List</b></a>
-    </div>
+        </div>
     <div class="inContentiySmoktunovskiy">
     $if boards:
         $for board in boards:
             <div class="dwItem inlineB small" id="horz-pin$board.id">
-
+                $if 'logged_in' and sess.user_id != user.id:
+                    $if board.is_followed:
+                        <a class='button' href="/unfollow_getlist/$board.id">Unfollow</a>
+                    $else:
+                        <a class='button' href="/follow_getlist/$board.id">Follow</a>
                 <div class="dwImg">
                     <img src="$boards_first_pins[board.id]['image_202_url']" />
                 </div>
@@ -23,8 +28,8 @@ $def with (boards, user, boards_first_pins={})
                 </div>
             </div>
     $else:
-        <p>You don't have any lists.</p>
-        <p><a href='/new-list' class="button"><b>Add A List</b></a></p>
+        <p>There is no lists to show</p>
+        $#    <p><a href='/new-list' class="button"><b>Add A List</b></a></p>
 
     </div>
 </div>

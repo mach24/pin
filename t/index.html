@@ -1,27 +1,46 @@
-$def with (pins, first_time, form)
+$def with (pins, first_time, form, feed_users=None, feed_cats=None, feed_getlists=None)
 $if first_time is not None:
   <div class='first-time'>
     <p class='notice'></p>
     <p class='pad-top'><button id='next'>Next</button> <button id='skip'>Skip</button></p>
   </div>  
   <script type='text/javascript' src='/static/firsttime.js'></script>
-$:tpl('pins', pins)
-
+$#$:tpl('pins', pins)
 
 <div id="mainPage">
         <div class="pinRoll">
-            <div id="firstRow">
-                <!--Roll Pins On Main Page-->
+        $if feed_users is not None:
+            <div id="firstRow" style="margin-bottom: 40px;">
+            <div style="display: block; width: 100%; height: 20px; margin: 10px auto;">
+                <h1>Your followers recent activity</h1>
             </div>
-            <div id="secondRow">
-                <!--Roll Pins On Main Page-->
+            $for feed_user in feed_users:
+                $:tpl('horzpin3', feed_user)
             </div>
-            <div id="thirdRow">
-                <!--Roll Pins On Main Page-->
+            <div id="secondRow" style="margin-bottom: 40px;">
+            <div style="display: block; width: 100%; height: 20px; margin: 10px auto;">
+                <h1>Recent activity in followed categories</h1>
             </div>
-            <div id="fourthRow">
-                <!--Roll Pins On Main Page-->
+            $for feed_cat in feed_cats:
+                $:tpl('horzpin3', feed_cat)
             </div>
+            <div id="thirdRow" style="margin-bottom: 40px;">
+            <div style="display: block; width: 100%; height: 20px; margin: 10px auto;">
+                <h1>Recent activity in followed getlists</h1> 
+            </div>
+            $for feed_getlist in feed_getlists:
+                $:tpl('horzpin3', feed_getlist)
+            </div>
+
+$#             <div id="secondRow">
+$#                 <!--Roll Pins On Main Page-->
+$#             </div>
+$#             <div id="thirdRow">
+$#                 <!--Roll Pins On Main Page-->
+$#             </div>
+$#             <div id="fourthRow">
+$#                 <!--Roll Pins On Main Page-->
+$#             </div>
         </div>  
          <div id="mainFooter">
         <p>
