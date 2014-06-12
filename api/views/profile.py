@@ -1078,8 +1078,10 @@ class UserFeed(BaseAPI):
         offset = int(request_data.get('offset', 0))
         use_redis = request_data.get('use_redis', False)
 
-        if logintoken:
-            user_status, user = self.authenticate_by_token(logintoken)
+        user_status, user = self.authenticate_by_token(logintoken)
+
+        if not user_status:
+            return user
             
         if not user_id:
             status = 400
@@ -1090,27 +1092,6 @@ class UserFeed(BaseAPI):
         feeds = None
 
         if status == 200:
-
-#                 SELECT pins.*, tags.tags, categories.id as category, categories.name as cat_name, users.pic as user_pic, users.username as user_username, users.name as user_name,
-#                         count(distinct p1) as repin_count, count(distinct l1) as like_count
-#                 FROM pins
-#                 LEFT JOIN tags on tags.pin_id = pins.id
-#                 LEFT JOIN pins p1 on p1.repin = pins.id
-#                 LEFT JOIN likes l1 on l1.pin_id = pins.id
-#                 LEFT JOIN users on users.id = pins.user_id
-#                 LEFT JOIN follows on follows.follow = users.id
-#                 LEFT JOIN categories on categories.id in
-#                     (SELECT category_id FROM pins_categories WHERE pin_id = pins.id limit 1)
-#                 WHERE pins.user_id IN (
-#                     SELECT follows.follow FROM follows WHERE follows.follower = $id
-#                     UNION
-#                     SELECT friends.id1 FROM friends WHERE friends.id2 = $id
-#                 ) OR pins.id IN (
-#                     SELECT board.id FROM boards WHERE user_id = $id AND public=true  
-#                 )
-#                 GROUP BY tags.tags, categories.id, pins.id, users.id
-#                 LIMIT $limit OFFSET $offset'''
-
             feed_query = '''
                 SELECT pins.*, tags.tags, categories.id as category, categories.name as cat_name, users.pic as user_pic, users.username as user_username, users.name as user_name,
                 count(distinct p1) as repin_count, count(distinct l1) as like_count
@@ -1186,3 +1167,277 @@ class UserFeed(BaseAPI):
                                 csid_from_server=csid_from_server)
 
         return response
+
+
+class FeedUser(BaseAPI):
+    def POST(self):
+        request_data = web.input()
+
+        update_data = {}
+        data = {}
+        default_limit = 50
+        status = 200
+        csid_from_server = None
+        error_code = ""
+        csid_from_client = request_data.get('csid_from_client')
+
+        # Get user id from data from request
+        csid_from_client = request_data.get('csid_from_client', '')
+        logintoken = request_data.get('logintoken', None)
+        limit = int(request_data.get('limit', default_limit))
+        offset = int(request_data.get('offset', 0))
+
+        user_status, user = self.authenticate_by_token(logintoken)
+
+        if not user_status:
+            return user
+         
+        if user is None:
+            status = 400
+            error_code = "Invalid input data"
+
+        data['feeds'] = list()
+
+        if status == 200:
+            f_type = u"user"
+            feeds = None
+            qvars = {'id': user.id}
+            feed_ids = list()
+            newsfeeds = db.select('newsfeed', where="follower=$user_id AND feed_type=$f_type", vars={'user_id': user.id, 'f_type': f_type})
+            for feed in newsfeeds:
+                feed_ids.append(feed.follow)
+
+            if feed_ids:
+                feed_query = '''
+                    SELECT pins.*, tags.tags, categories.id as category, categories.name as cat_name, users.pic as user_pic, users.username as user_username, users.name as user_name,
+                    count(distinct p1) as repin_count, count(distinct l1) as like_count
+                    FROM pins
+                        LEFT JOIN tags on tags.pin_id = pins.id
+                        LEFT JOIN pins p1 on p1.repin = pins.id
+                        LEFT JOIN likes l1 on l1.pin_id = pins.id
+                        LEFT JOIN users on users.id = pins.user_id
+                        LEFT JOIN follows on follows.follow = users.id
+                        LEFT JOIN categories on categories.id in
+                            (SELECT category_id FROM pins_categories WHERE pin_id = pins.id limit 1)
+                    WHERE pins.user_id IN (%s)
+                    GROUP BY tags.tags, categories.id, pins.id, users.id
+                    LIMIT $limit OFFSET $offset'''
+
+                feed_in = ', '.join(map(lambda x: '%s' % x, feed_ids))
+                feed_query = feed_query % feed_in
+
+                qvars = {'limit': int(limit), 'offset': int(offset)}
+                feeds = db.query(feed_query, vars=qvars)
+                feeds = [pin_utils.dotdict(feed) for feed in feeds]
+                data['feeds'] = feeds
+            else:
+                data['feeds'] = None
+
+        response = api_response(data=data, 
+                                status=status, 
+                                error_code=error_code, 
+                                csid_from_client=csid_from_client,
+                                csid_from_server=csid_from_server)
+
+        return response
+
+
+class FeedCategories(BaseAPI):
+    def POST(self):
+        request_data = web.input()
+
+        update_data = {}
+        data = {}
+        default_limit = 50
+        status = 200
+        csid_from_server = None
+        error_code = ""
+        csid_from_client = request_data.get('csid_from_client')
+
+        # Get user id from data from request
+        csid_from_client = request_data.get('csid_from_client', '')
+        logintoken = request_data.get('logintoken', None)
+        limit = int(request_data.get('limit', default_limit))
+        offset = int(request_data.get('offset', 0))
+
+        user_status, user = self.authenticate_by_token(logintoken)
+
+        if not user_status:
+            return user
+         
+        if user is None:
+            status = 400
+            error_code = "Invalid input data"
+
+        data['feeds'] = list()
+
+        if status == 200:
+            f_type = u"category"
+            feeds = None
+            qvars = {'id': user.id}
+            feed_ids = list()
+            newsfeeds = db.select('newsfeed', where="follower=$user_id AND feed_type=$f_type", vars={'user_id': user.id, 'f_type': f_type})
+            for feed in newsfeeds:
+                feed_ids.append(feed.follow)
+
+            if feed_ids:
+                feed_query = '''
+                    SELECT pins.*, tags.tags, categories.id as category, categories.name as cat_name, users.pic as user_pic, users.username as user_username, users.name as user_name,
+                    count(distinct p1) as repin_count, count(distinct l1) as like_count
+                    FROM pins
+                        LEFT JOIN tags on tags.pin_id = pins.id
+                        LEFT JOIN pins p1 on p1.repin = pins.id
+                        LEFT JOIN likes l1 on l1.pin_id = pins.id
+                        LEFT JOIN users on users.id = pins.user_id
+                        LEFT JOIN follows on follows.follow = users.id
+                        LEFT JOIN categories on categories.id in
+                            (SELECT category_id FROM pins_categories WHERE pin_id = pins.id limit 1)
+                    WHERE pins.id IN (
+                        SELECT pin_id FROM pins_categories WHERE category_id IN (%s)
+                    )
+                    GROUP BY tags.tags, categories.id, pins.id, users.id
+                    LIMIT $limit OFFSET $offset'''
+                    
+                feed_in = ', '.join(map(lambda x: '%s' % x, feed_ids))
+                feed_query = feed_query % feed_in
+
+                qvars = {'limit': int(limit), 'offset': int(offset)}
+                feeds = db.query(feed_query, vars=qvars)
+                feeds = [pin_utils.dotdict(feed) for feed in feeds]
+                data['feeds'] = feeds
+            else:
+                data['feeds'] = None
+
+        response = api_response(data=data, 
+                                status=status, 
+                                error_code=error_code, 
+                                csid_from_client=csid_from_client,
+                                csid_from_server=csid_from_server)
+
+        return response
+
+
+class FeedGetlists(BaseAPI):
+    def POST(self):
+        request_data = web.input()
+
+        update_data = {}
+        data = {}
+        default_limit = 50
+        status = 200
+        csid_from_server = None
+        error_code = ""
+        csid_from_client = request_data.get('csid_from_client')
+
+        # Get user id from data from request
+        csid_from_client = request_data.get('csid_from_client', '')
+        logintoken = request_data.get('logintoken', None)
+        limit = int(request_data.get('limit', default_limit))
+        offset = int(request_data.get('offset', 0))
+
+        user_status, user = self.authenticate_by_token(logintoken)
+
+        if not user_status:
+            return user
+         
+        if user is None:
+            status = 400
+            error_code = "Invalid input data"
+
+        data['feeds'] = list()
+
+        if status == 200:
+            f_type = u"getlist"
+            feeds = None
+            qvars = {'id': user.id}
+            feed_ids = list()
+            newsfeeds = db.select('newsfeed', where="follower=$user_id AND feed_type=$f_type", vars={'user_id': user.id, 'f_type': f_type})
+            for feed in newsfeeds:
+                feed_ids.append(feed.follow)
+
+            if feed_ids:
+                feed_query = '''
+                    SELECT pins.*, tags.tags, categories.id as category, categories.name as cat_name, users.pic as user_pic, users.username as user_username, users.name as user_name,
+                    count(distinct p1) as repin_count, count(distinct l1) as like_count
+                    FROM pins
+                        LEFT JOIN tags on tags.pin_id = pins.id
+                        LEFT JOIN pins p1 on p1.repin = pins.id
+                        LEFT JOIN likes l1 on l1.pin_id = pins.id
+                        LEFT JOIN users on users.id = pins.user_id
+                        LEFT JOIN follows on follows.follow = users.id
+                        LEFT JOIN categories on categories.id in
+                            (SELECT category_id FROM pins_categories WHERE pin_id = pins.id limit 1)
+                    WHERE pins.board_id IN (%s) GROUP BY tags.tags, categories.id, pins.id, users.id
+                    LIMIT $limit OFFSET $offset'''
+                    
+                feed_in = ', '.join(map(lambda x: '%s' % x, feed_ids))
+                feed_query = feed_query % feed_in
+
+                qvars = {'limit': int(limit), 'offset': int(offset)}
+                feeds = db.query(feed_query, vars=qvars)
+                feeds = [pin_utils.dotdict(feed) for feed in feeds]
+                data['feeds'] = feeds
+            else:
+                data['feeds'] = None
+
+        response = api_response(data=data, 
+                                status=status, 
+                                error_code=error_code, 
+                                csid_from_client=csid_from_client,
+                                csid_from_server=csid_from_server)
+
+        return response
+
+
+class FeedFollow(BaseAPI):
+    def POST(self):
+        request_data = web.input()
+
+        update_data = {}
+        data = {}
+        default_limit = 50
+        status = 200
+        csid_from_server = None
+        error_code = ""
+        csid_from_client = request_data.get('csid_from_client')
+
+        # Get user id from data from request
+        csid_from_client = request_data.get('csid_from_client', '')
+        logintoken = request_data.get('logintoken', None)
+        f_type = request_data.get('feed_type', u"user")
+        follow_type = request_data.get('follow_type', u"follower")
+
+        user_status, user = self.authenticate_by_token(logintoken)
+
+        if not user_status:
+            return user
+         
+        if user is None:
+            status = 400
+            error_code = "Invalid input data"
+
+        if status == 200:
+            itm_ids = list()
+            if follow_type == u"followed":
+                newsfeeds = db.select('newsfeed', where="follow=$itm_id AND feed_type=$f_type", vars={'itm_id': user.id, 'f_type': f_type})
+            else:
+                newsfeeds = db.select('newsfeed', where="follower=$itm_id AND feed_type=$f_type", vars={'itm_id': user.id, 'f_type': f_type})
+            for itm in newsfeeds:
+                if follow_type == u"follower":
+                    itm_ids.append(itm.follow)
+                else:
+                    itm_ids.append(itm.follower)
+
+            if itm_ids:
+                data['following'] = itm_ids
+            else:
+                data['following'] = None
+
+        response = api_response(data=data, 
+                                status=status, 
+                                error_code=error_code, 
+                                csid_from_client=csid_from_client,
+                                csid_from_server=csid_from_server)
+
+        return response
+

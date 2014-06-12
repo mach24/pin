@@ -1,8 +1,13 @@
-$def with (category, categories, subcategories, boards, sibling_categories, parent)
+$def with (category, categories, subcategories, boards, sibling_categories, parent, follow_cat=None)
 $if category['id'] == 0:
   <h1>Browsing <a href=''>Random Pins</a></h1>
 $else:
   <h1>Browsing Category <a href=''>$category['name']</a></h1>
+  $if follow_cat is not None:
+    $if follow_cat:
+        <a class='button' href="/unfollow_category/$category['id']">Unfollow</a>
+    $else:
+        <a class='button' href="/follow_category/$category['id']">Follow</a>
   $if subcategories:
   	<div class="subcategory_block">Related:
   	$for subcat in subcategories:

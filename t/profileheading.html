@@ -1,4 +1,4 @@
-$def with (user, hashed, edit_profile=None, edit_profile_done=None)
+$def with (user, hashed, following_user=None, edit_profile=None, edit_profile_done=None)
 <div class="profBack"
       $if user.bg:
         $if 'logged_in' in sess and sess.user_id == user.id:
@@ -75,6 +75,15 @@ $#                        <a class='button' href='/follow/$user.id'>Follow</a>
 $#                    <a class='button buttonWhite' href='/newconvo/$user.id'>
 $#                        <i class="flaticon-email21"></i> Message
 $#                    </a>
+            $if 'logged_in' in sess and user.id != sess.user_id:
+                $if following_user is not None:
+                    $if following_user:
+                        <a class='button' href='/unfollow_user/$user.id'>Unfollow</a>
+                    $else:
+                        <a class='button' href='/follow_user/$user.id'>Follow</a>
+
+
+                    
         </p>
     </div>
 </div>
